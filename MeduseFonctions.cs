@@ -13,12 +13,12 @@ namespace IFSCL.VirtualWorld {
 
     //DNA theft should be considered as theft of Lyoko keys in the case of Aelita and a Xana imprisoned on Lyoko
     public class MeduseFonctions : CreatureUnique {
-        [ReadOnly] public MainTimer T_SkillUse = new MainTimer(0.01f);
+        [ReadOnly] public MainTimer T_SkillUse = new ("T_MeduseSkillUse",0.01f);
         public ScyphozoaSkill skillMode = ScyphozoaSkill.None;
         public bool usedOncePerMaze;
-        public EnergieNeeder drain = new EnergieNeeder(DepensesEnergetiques.drain, 0, "-");
+        public EnergieNeeder drain = new(DepensesEnergetiques.drain, 0, "-");
         public LyokoGuerrier capturedLw;
-        public CloneEncounterProfile cloneEncounterProfile = new CloneEncounterProfile();
+        public CloneEncounterProfile cloneEncounterProfile = new();
         //the scyphozoa can only be destroyed when it uses its power. On Skidbladnir or lyokoguerriers
         public MeduseFonctions() {
             nom = Lex.meduse.ToString();
@@ -27,13 +27,23 @@ namespace IFSCL.VirtualWorld {
         }
         public static string GetPreciseDrainName() {
             return VarG.meduseFonction.skillMode switch {
-                ScyphozoaSkill.DrainCore => MSG.GetOptionNames("xanaScyphozoaDrainCore"),
-                ScyphozoaSkill.DrainSkid => MSG.GetOptionNames("xanaScyphozoaDrainSkid"),
+                ScyphozoaSkill.DrainCore => MSG.GetOptionNames("xanaDrainCoreAttacks"),
+                ScyphozoaSkill.DrainSkid => MSG.GetOptionNames("xanaDrainSkidAttacks"),
                 _ => " - "
             };
         }
         public bool HasUnderControl(LyokoGuerrier _LG) {
             return capturedLw == _LG;
+        }
+        public override void OnVirt(params object[] arg) {
+            if (created) {
+                MSG.AffCriticalInfo("unique creature " + nom + " already created, a duplicate spawn will cause issues");
+            }
+            Territoire t = arg[0] as Territoire;
+            if (t.superc.IsReplika()) {
+                MSG.AffCriticalInfo("scyphozoa is forbidden to spawn on replika");
+            }
+            created = true;
         }
         public void OnSkidDemater() {
             if (created && skillMode == ScyphozoaSkill.DrainSkid && T_SkillUse.IsRunning()) {
@@ -59,8 +69,8 @@ namespace IFSCL.VirtualWorld {
         public bool IsUsingItsPower() {
             return T_SkillUse.IsRunning();
         }
-        public void UpdateTimersFast() {
-            if (T_SkillUse.IncrementReach())
+        public void UpdateTimers() {
+            if (T_SkillUse.TryDecrement())
                 UsePower();
         }
         public void RAZ(bool needDevirt = false) { // Debug.Log("razMeduse");
@@ -76,7 +86,7 @@ namespace IFSCL.VirtualWorld {
                 skillMode = drainMode;
                 Camps.jeremie.energyProvider.SendTo(drain, DepensesEnergetiques.drain.maintien, false, true);
                 //ProgramsF.energieStat.Execution(false);
-                T_SkillUse.Start();
+                T_SkillUse.Launch();
                 //ProgramsF.energieStat.graph.DisplayEnergyUse();
                 Debug.Log("StartPower " + drainMode);
                 switch (drainMode) {
@@ -105,32 +115,30 @@ namespace IFSCL.VirtualWorld {
             if (LG.nom == CharacterBase.franz.ToString() || !LyokoGuerrier.IsLyokoGuerrier(LG.nom) || LyokoGuerrier.GetByName(LG.nom).controle != XanaControlStatus.None || LyokoGuide.GetByName(Lex.meduse) == null)
                 return ScyphozoaSkill.None;
             LyokoGuerrier _target = LyokoGuerrier.GetByName(LG.nom);
-
-            // TODO 48X stealKeys in the case of Aelita with the Keys and Xana locked up on Lyoko
-            if (LevelableOption.GetOp(GameOptionName.xanaScyphozoaXanafie).currentValue > 0 &&
-                LevelableOption.GetOp(GameOptionName.xanaScyphozoaSteal).currentValue > 0) {
+            float stealValue = LevelableOption.GetOp(GameOptionName.xanaScyphozoaSteal).currentValue;
+            float xanafieValue = LevelableOption.GetOp(GameOptionName.xanaScyphozoaXanafie).currentValue;
+            
+            // TODO 52X stealKeys in the case of Aelita with the Keys and Xana locked up on Lyoko
+            // le pitch: aelita doit être bloquée sur Lyoko (sans sa mémoire) avec ou sans code terre,
+            // c'est donc une option précise XanaBoundToLyoko, qui doit être activée conjointement avec la meduse 'voleuse de mémoire' et aelita 'sans mémoire'
+            if (xanafieValue > 0 && stealValue > 0) {
                 //if the LW is already in deadly devirt, since xanatification is possible, we automatically choose this one
                 if (_target.HasDevirtMortelle()) {
                     return ScyphozoaSkill.Xanatifier;
                 }
 
                 //which option stands the best chance? we test it
-                if (LevelableOption.GetOp(GameOptionName.xanaScyphozoaSteal).currentValue ==
-                    LevelableOption.GetOp(GameOptionName.xanaScyphozoaXanafie).currentValue) {
-                    //si les valeurs sont égales
-                    bool _testB = Random.value > 0.5f;
-                    return _testB ? ScyphozoaSkill.VolAdn : ScyphozoaSkill.Xanatifier;
+                if (xanafieValue == stealValue) {
+                    //if values are equal
+                    return Random.value > 0.5f ? ScyphozoaSkill.VolAdn : ScyphozoaSkill.Xanatifier;
                 }
                 //if values are not equal
-                float stealValue = LevelableOption.GetOp(GameOptionName.xanaScyphozoaSteal).currentValue;
-                float xanafieValue = LevelableOption.GetOp(GameOptionName.xanaScyphozoaXanafie).currentValue;
                 return GetRandomVal(stealValue, xanafieValue);
             }
-            if (LevelableOption.GetOp(GameOptionName.xanaScyphozoaSteal).currentValue > 0 &&
-                !_target.HasDevirtMortelle()) {
+            if (stealValue > 0 && !_target.HasDevirtMortelle()) {
                 return ScyphozoaSkill.VolAdn;
             }
-            if (LevelableOption.GetOp(GameOptionName.xanaScyphozoaXanafie).currentValue > 0) {
+            if (xanafieValue > 0) {
                 return ScyphozoaSkill.Xanatifier;
             }
             Debug.Log("Saved prefs do not contains xanaScyphozoaSteal (+noMortalDevirt) or Xanafie values, so they should fight");
@@ -173,11 +181,11 @@ namespace IFSCL.VirtualWorld {
             _LG.OnCapturedByScyphozoa(_monsterGuide);
             if (!_monsterGuide.HasWalkablePathUnderneath(false) && _LG.carthageProfile.cPos != CarthagePos.maze) {
                 _monsterGuide.Remonter_surface(true, true);
-                if (ProgramsF.GetA_SC<PrgVMap>().IsOpen() &&
-                    ProgramsF.GetA_SC<PrgVMap>().displayedTerritoire == _monsterGuide.territoire) {
+                if (ProgramsF.GetA_SC<PrgVirtualMap>().IsOpen() &&
+                    ProgramsF.GetA_SC<PrgVirtualMap>().displayedTerritoire == _monsterGuide.territoire) {
                     PrgAnomaly.ExecuteDetailled(OSTarget.SC,
                         MSG.GetAnomaly("LGteleportedBy").Replace("[LG_NAME]", capturedLw.nomTraduit),
-                        ProgramsF.GetA_SC<PrgVMap>(), true);
+                        ProgramsF.GetA_SC<PrgVirtualMap>(), true);
                 }
             }
             if (capturedLw.memoryQuantity is 9999 or 0)
@@ -188,14 +196,17 @@ namespace IFSCL.VirtualWorld {
             ProgramsF.GetAByOS<PrgVBrainAnalyzer>(OSTarget.SC).SetModeM(skillMode);
             Debug.Log("setLGuidecontrol_meduseFonctions_" + _LG.nom + " " + capturedLw.memoryQuantity);
             //BanqueSonore.channelMemoireLyokoG=BanqueSonore.memoireCalcul.play(0,1000);
-            T_SkillUse.Start();
+            T_SkillUse.Launch();
             Debug.Log("StartPower " + skillMode);
-            if (_monsterGuide.noVirtZone && ProgramsF.GetA_SC<PrgVMap>().GetCam3D().rtsCam._followTarget == _monsterGuide.transform) {
+            if (_monsterGuide.noVirtZone && ProgramsF.GetA_SC<PrgVirtualMap>().GetCam3D().rtsCam._followTarget == _monsterGuide.transform) {
                 _monsterGuide.noVirtZone.gameObject.SetActive(true);
                 _monsterGuide.noVirtZone.AnmDisplay();
             }
         }
+        public LyokoGuide _cachedMonsterGuideUsePower;
         public void UsePower() {
+            if (_cachedMonsterGuideUsePower==null)
+                _cachedMonsterGuideUsePower = LyokoGuide.GetByName(Lex.meduse);
             switch (skillMode) {
                 case ScyphozoaSkill.DrainCore:
                     if (VarG.scLyoko.core.GetTotal_Hp() <= 0) {
@@ -215,7 +226,9 @@ namespace IFSCL.VirtualWorld {
                         capturedLw.PerdreCodeADN();
                         EndPower(true);
                     } else {
-                        capturedLw.memoryQuantity = Mathf.Clamp(capturedLw.memoryQuantity -= Mathf.FloorToInt(GameBalanceList.GetREF(GameBalanceType.scyphozoaMemoryChangeSpeed).GetCurrentValue() * Time.timeScale), 0, 9999);
+                        if (!_cachedMonsterGuideUsePower.battleProfile.IsFreezedOrParalyzed()){
+                            capturedLw.memoryQuantity = Mathf.Clamp(capturedLw.memoryQuantity -= Mathf.FloorToInt(GameBalanceList.GetREF(GameBalanceType.scyphozoaMemoryChangeSpeed).GetCurrentValue() * (Time.deltaTime)), 0, 9999);
+                        }
                     }
                     ProgramsF.GetAByOS<PrgVBrainAnalyzer>(OSTarget.SC).Maj(false);
                     break;
@@ -225,7 +238,10 @@ namespace IFSCL.VirtualWorld {
                         capturedLw.Xanatifier();
                         EndPower(true);
                     } else {
-                        capturedLw.memoryQuantity = Mathf.Clamp(capturedLw.memoryQuantity += Mathf.FloorToInt(GameBalanceList.GetREF(GameBalanceType.scyphozoaMemoryChangeSpeed).GetCurrentValue() * Time.timeScale), 0, 9999);
+                        if (!_cachedMonsterGuideUsePower.battleProfile.IsFreezedOrParalyzed()){
+                            capturedLw.memoryQuantity = Mathf.Clamp(capturedLw.memoryQuantity += Mathf.FloorToInt(GameBalanceList.GetREF(GameBalanceType.scyphozoaMemoryChangeSpeed).GetCurrentValue() * (Time.deltaTime)), 0, 9999);
+                        }
+                        
                     }
                     ProgramsF.GetAByOS<PrgVBrainAnalyzer>(OSTarget.SC).Maj(false);
                     break;
