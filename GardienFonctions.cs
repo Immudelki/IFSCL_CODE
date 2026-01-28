@@ -1,5 +1,7 @@
+using DG.Tweening;
 using UnityEngine;
 using IFSCL.Programs;
+using Pathfinding;
 using Sirenix.OdinInspector;
 namespace IFSCL.VirtualWorld {
     public class GardienFonctions : CreatureUnique {
@@ -7,38 +9,42 @@ namespace IFSCL.VirtualWorld {
         public LyokoGuerrier capturedLw;
         [Unity.Collections.ReadOnly, SerializeField]
         private bool isUsingSkill;
-        public MainTimer T_SkillUse = new MainTimer(0.01f);
-        public CountdownUnit chipDestabilizationCountdown;
-        public CloneEncounterProfile cloneEncounterProfile = new CloneEncounterProfile();
+        public MainTimer T_SkillUse = new ("T_GardienSkillUse",0.01f);
+        public CountdownUnit CU_chipDestabilization;
+        public CloneEncounterProfile cloneEncounterProfile = new ();
         public GardienFonctions() {
             nom = Lex.gardien.ToString();
             cloneEncounterProfile.linkedCreature = this;
             cloneEncounterProfile.monsterLex = Lex.gardien;
         }
         public override void Init() {
-            chipDestabilizationCountdown = CountdownUnit.CreateNew("surge_guardian", ProgramsF.GetA_SC<PrgBubbleGuardian>().graph.countdownDisplay, OnCountdownComplete);
+            CU_chipDestabilization = CountdownUnit.CreateNew("surge_guardian", OnCountdownComplete);
+            CU_chipDestabilization.AddDynamicDisplay(ProgramsF.GetA_SC<PrgBubbleGuardian>().graph.CU_Display);
         }
         public override bool CanSpawn() {
             return !created && !time_TillReuse.IsRUNNING() &&
                    LevelableOption.GetOp(GameOptionName.xanaGuardianUse).currentValue > 0;
         }
-        public override void OnVirt() {
+        public override void OnVirt(params object[] args) {
             base.OnVirt();
-            chipDestabilizationCountdown.Reset();
+            CU_chipDestabilization.Reset();
         }
 
         public void RAZ(bool fromDevirt = false) {
             if (VarG.isQuittingApplication)
                 return;
             Debug.Log("razGardien");
-            chipDestabilizationCountdown.Stop();
+            CU_chipDestabilization.Stop();
             T_SkillUse.Stop();
             if (capturedLw != null && capturedLw.IsVirt()) {
-                capturedLw.GetGuide().DoParalyzeMidAir(false);
+                var guide = capturedLw.GetGuide();
+                
+                guide.DoParalyzeMidAir(false);
                 Grouping.Degrouper(LyokoGuide.GetByName(Lex.gardien));
-                capturedLw.GetGuide().EnableRvoController(true);
-                capturedLw.GetGuide().RepositionAndTryEnableAI();
-                capturedLw.GetGuide().Mcarte.ForceResetMoveBack();
+                guide.EnableRvoController(true);
+                guide.RepositionAndTryEnableAI();
+                guide.Mcarte.ForceResetMoveBack();
+                
                 capturedLw = null;
                 ProgramsF.GetA_SC<PrgBubbleGuardian>().graph.UpdateLwSetup();
             }
@@ -48,8 +54,8 @@ namespace IFSCL.VirtualWorld {
             isUsingSkill = false;
             RazMinimum();
         }
-        public void UpdateTimersFast() {
-            if (!T_SkillUse.IncrementReach())
+        public void UpdateTimers() {
+            if (!T_SkillUse.TryDecrement())
                 return;
             if (!T_SkillUse.tickTime.Equals(GameBalanceREF.GetByEnum(GameBalanceType.guardianHpRemovalTickSpeed).GetCurrentValue()))
                 T_SkillUse.tickTime = GameBalanceREF.GetByEnum(GameBalanceType.guardianHpRemovalTickSpeed).GetCurrentValue();
@@ -78,34 +84,35 @@ namespace IFSCL.VirtualWorld {
             LG.OnCapturedByGardien(_monsterGuide);
             if (!_monsterGuide.HasWalkablePathUnderneath(false)) {
                 _monsterGuide.Remonter_surface(true, true); //in case the keeper pricked an LW that was on an aerian path
-                if (ProgramsF.GetA_SC<PrgVMap>().IsOpen() &&
-                    ProgramsF.GetA_SC<PrgVMap>().displayedTerritoire == _monsterGuide.territoire) {
-                    PrgAnomaly.ExecuteDetailled(OSTarget.SC, MSG.GetAnomaly("LGteleportedBy").Replace("[LG_NAME]", capturedLw.nomTraduit), ProgramsF.GetA_SC<PrgVMap>(), true);
+                if (ProgramsF.GetA_SC<PrgVirtualMap>().IsOpen() &&
+                    ProgramsF.GetA_SC<PrgVirtualMap>().displayedTerritoire == _monsterGuide.territoire) {
+                    PrgAnomaly.ExecuteDetailled(OSTarget.SC, MSG.GetAnomaly("LGteleportedBy").Replace("[LG_NAME]", capturedLw.nomTraduit), ProgramsF.GetA_SC<PrgVirtualMap>(), true);
                 }
             }
             TeleportAway();
-            T_SkillUse.Start();
+            T_SkillUse.Launch();
             TryDestabilizeChip();
-            if (_monsterGuide.noVirtZone && ProgramsF.GetA_SC<PrgVMap>().GetCam3D().rtsCam._followTarget == _monsterGuide.transform) {
+            if (_monsterGuide.noVirtZone && ProgramsF.GetA_SC<PrgVirtualMap>().GetCam3D().rtsCam._followTarget == _monsterGuide.transform) {
                 _monsterGuide.noVirtZone.gameObject.SetActive(true);
                 _monsterGuide.noVirtZone.AnmDisplay();
             }
             return true;
         }
         [Button]
-        public void DBG_TestTpNearTower() {
+        public void DBG_TestTpToRandomTower() {
             LyokoGuide _monsterGuide = LyokoGuide.GetByName(Lex.gardien);
             _monsterGuide.teleportProfile.ToRandomTowerDirect(_monsterGuide.GetSuperc(), true);
         }
 
         public bool hasTriedTeleportA;
+        [Button]
         public void TeleportAway() {
             if (VarG.gameMode == GameMode.Story) {
                 if (!hasTriedTeleportA) {
-                    LyokoGuide.GetByName(Lex.gardien)?.teleportProfile.ToSurfaceDirect(ChapterAtk.GetGuardianTP_A(), ChapterAtk.GetGuardianTPV3_A());
+                    LyokoGuide.GetByName(Lex.gardien)?.teleportProfile.ToSurfaceDirect(ChapterLyokoAction.GetGuardianTP_A(), ChapterLyokoAction.GetGuardianTPV3_A());
                     hasTriedTeleportA = true;
                 } else {
-                    LyokoGuide.GetByName(Lex.gardien)?.teleportProfile.ToSurfaceDirect(ChapterAtk.GetGuardianTP_B(), ChapterAtk.GetGuardianTPV3_B());
+                    LyokoGuide.GetByName(Lex.gardien)?.teleportProfile.ToSurfaceDirect(ChapterLyokoAction.GetGuardianTP_B(), ChapterLyokoAction.GetGuardianTPV3_B());
                     hasTriedTeleportA = false;
                 }
             } else {
@@ -114,16 +121,16 @@ namespace IFSCL.VirtualWorld {
         }
 
         public void OnCountdownComplete() {
-            chipDestabilizationCountdown.Stop();
+            CU_chipDestabilization.Stop();
             TryDestabilizeChip();
             TeleportAway();
         }
         public void OnEntityChipChanged() {
             if (!created)
                 return;
-            if (chipDestabilizationCountdown != null && !chipDestabilizationCountdown.IsRunning() && ChipCode.GetByEnum(ChipContentType.sectorEntity).IsInDestinedReader_And_Calibrated()) {
-                chipDestabilizationCountdown.SetTimer(60 * 6);
-                chipDestabilizationCountdown.Launch();
+            if (CU_chipDestabilization != null && !CU_chipDestabilization.IsRunning() && ChipCode.GetByEnum(ChipContentType.sectorEntity).IsInDestinedReader_And_Calibrated()) {
+                CU_chipDestabilization.SetTimer(60 * 6);
+                CU_chipDestabilization.Launch();
             }
         }
         public void TryDestabilizeChip() {
