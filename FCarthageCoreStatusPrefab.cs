@@ -1,84 +1,122 @@
-﻿using Sirenix.OdinInspector;
+using DG.Tweening;
+using IFSCL.VirtualWorld;
 using UnityEngine;
-using UnityEngine.UI;
-using UnityEngine.Video;
 namespace IFSCL.Programs {
-    using VirtualWorld;
-    public class FCarthageCoreStatusPrefab : FContentPrefab {
-        public Animator moverAnimator;
-        public Image shieldImage_0;
-        public Image shieldImage_1;
-        public Sprite blueShield_Sprite;
-        public Sprite redShield_Sprite;
-        public Image lifeBarTotal;
-        public Text lifeBarTotalTextField;
-        public Image lifeBarShield_0;
-        public Image lifeBarShield_1;
-        public Image lifeBarCore;
-        public Image shield0_Bar;
-        public Image shield1_Bar;
-        public Image core_Bar;
-        public Image total_Bar;
-        public Image shield1_anim;
-        public Image shield0_anim;
-        public CanvasGroup damageGradients;
-        public VideoPlayer video;
-        [ReadOnly]
-        public VirtualCore linkedCore;
-
-        public Color colorGreen;
-        public Color colorRed;
-        public void OnInit() {
-            video.playbackSpeed = 2;
+    public class PrgCarthageCoreStatus : ProgramsF {
+        public FCarthageCoreStatusPrefab graph;
+        public float lastSavedHP;
+        private GameObject regenParticleSystem;
+        private ParticleSystem hitParticleSystem;
+        private ParticleSystem shieldDownParticleSystem;
+        public AudioSource _audioSource;
+        public bool autoOpened_Once;
+        private VirtualCore linkedCore;
+        public bool initComplete;
+        public PrgCarthageCoreStatus(params object[] args)
+            : base(args) {
         }
-        void Update() { //TODO 43X: optim
-            if (linkedCore == null)
+        public override void Initialisation(FContentPrefab fenetreGameObject) {
+            base.Initialisation(fenetreGameObject);
+            graph = fenetreGameObject.GetComponent<FCarthageCoreStatusPrefab>();
+            graph.OnInit();
+        }
+        public void InitAfterMV() {
+            linkedCore = VarG.scLyoko.core;
+            graph.linkedCore = linkedCore;
+            ParticleSystem[] particleSystems = VarG.carthageParam.coreElement.GetComponentsInChildren<ParticleSystem>(true);
+            foreach (ParticleSystem ps in particleSystems) {
+                if (ps.gameObject.name.Contains("hit"))
+                    hitParticleSystem = ps;
+            }
+            regenParticleSystem = VarG.carthageParam.coreElement.regenFX;
+            shieldDownParticleSystem = VarG.carthageParam.shieldDownFX;
+            _audioSource =
+                VarG.carthageParam.shieldDownFX.GetComponent<AudioSource>(); //pas vmap3D pour le moment en terme de distances
+            hitParticleSystem.Stop();
+            StopRegenFX();
+            shieldDownParticleSystem.Stop();
+            graph.damageGradients.transform.DOScale(0.5f, 0);
+            ResetOpenedOnce();
+            lastSavedHP = graph.GetTotal();
+            initComplete = true;
+        }
+        public override void Raz_FromRvlp() {
+            ResetOpenedOnce();
+            lastSavedHP = graph.GetTotal();
+        }
+        public override void Raz_FromRestart() {
+            ResetOpenedOnce();
+            initComplete = false;
+        }
+        public void ResetOpenedOnce() {
+            autoOpened_Once = false;
+        }
+        public void OnCarthageDestruction() {
+            if (IsOpen())
+                CloseWin();
+        }
+        public override void UpdateTimers() {
+            if (!initComplete)
                 return;
-            if (linkedCore.shield0_Hp == 0) {
-                shieldImage_0.overrideSprite = redShield_Sprite;
-            } else {
-                shieldImage_0.overrideSprite = blueShield_Sprite;
+            if (VarG.otherData.coreAttacksAutoWindowOpening && lastSavedHP > graph.GetTotal()) {
+                //Debug.Log("lastSavedHP: "+lastSavedHP + " / graph.GetTotal(): "+graph.GetTotal());
+                //même si déjà ouverte, le but est que ça ouvre uniquement si on a pas ouvert la fenêtre depuis longtemps (aka = dernier raz ou dernier bouclier tombé)
+                if (!IsOpen() && !autoOpened_Once) {
+                    if (linkedCore.linkedMV.IsShellConnected()) {
+                        Execution(false);
+                    }
+                    // CompositeSentence("coreIsUnderAttack", false);
+                }
+                autoOpened_Once = true; //must be after autoOpen
             }
-            if (linkedCore.shield1_Hp == 0) {
-                shieldImage_1.overrideSprite = redShield_Sprite;
-            } else {
-                shieldImage_1.overrideSprite = blueShield_Sprite;
+        }
+        public void StopRegenFX() {
+            //regenParticleSystem.main.loop=false;
+            if (regenParticleSystem != null && regenParticleSystem.activeSelf)
+                regenParticleSystem.SetActive(false);
+        }
+        public void StartRegenFX() {
+            if (regenParticleSystem != null && !regenParticleSystem.activeSelf) {
+                regenParticleSystem.SetActive(true);
             }
-            shield0_Bar.GetComponent<RectTransform>().anchoredPosition = new Vector2(Mathf.Lerp(45.8f, -46.2f, linkedCore.shield0_Hp / VirtualCore.shield_HpMAX), 0);
-            shield1_Bar.GetComponent<RectTransform>().anchoredPosition = new Vector2(Mathf.Lerp(45.8f, -46.2f, linkedCore.shield1_Hp / VirtualCore.shield_HpMAX), 0);
-            core_Bar.GetComponent<RectTransform>().anchoredPosition = new Vector2(Mathf.Lerp(45.8f, -46.2f, linkedCore.core_Hp / VirtualCore.core_HpMAX), 0);
-
-            total_Bar.GetComponent<RectTransform>().anchoredPosition = new Vector2(Mathf.Lerp(63.7f, -63.9f, ((linkedCore.shield0_Hp + linkedCore.shield1_Hp + linkedCore.core_Hp) / 3) / 100), 0);
-
-            lifeBarShield_0.color = Color.Lerp(colorRed, colorGreen, linkedCore.shield0_Hp / VirtualCore.shield_HpMAX);
-            lifeBarShield_0.fillAmount = linkedCore.shield0_Hp / VirtualCore.shield_HpMAX;
-            lifeBarShield_1.color = Color.Lerp(colorRed, colorGreen, linkedCore.shield1_Hp / VirtualCore.shield_HpMAX);
-            lifeBarShield_1.fillAmount = linkedCore.shield1_Hp / VirtualCore.shield_HpMAX;
-            lifeBarCore.color = Color.Lerp(colorRed, colorGreen, linkedCore.core_Hp / VirtualCore.core_HpMAX);
-            if (Mathf.FloorToInt(linkedCore.shield0_Hp + linkedCore.shield1_Hp + linkedCore.core_Hp) / 3 == 0) {
-                lifeBarCore.fillAmount = 0; //fix
-            } else {
-                lifeBarCore.fillAmount = linkedCore.core_Hp / VirtualCore.core_HpMAX;
+        }
+        public void DoDamageFX(bool animBringDownShield, bool withFX = false) {
+            if (withFX) {
+                hitParticleSystem.Play(); //hit
             }
-            shield0_anim.color = Color.Lerp(colorRed, colorGreen, linkedCore.shield0_Hp / VirtualCore.shield_HpMAX);
-            shield1_anim.color = Color.Lerp(colorRed, colorGreen, linkedCore.shield1_Hp / VirtualCore.shield_HpMAX);
-
-            lifeBarTotal.color = Color.Lerp(colorRed, colorGreen, ((linkedCore.shield0_Hp + linkedCore.shield1_Hp + linkedCore.core_Hp) / 3) / 100);
-            lifeBarTotal.fillAmount = ((linkedCore.shield0_Hp + linkedCore.shield1_Hp + linkedCore.core_Hp) / 3) / 100;
-            lifeBarTotalTextField.text = string.Format("{0:000} %", Mathf.FloorToInt(linkedCore.shield0_Hp + linkedCore.shield1_Hp + linkedCore.core_Hp) / 3);
+            if (animBringDownShield) {
+                shieldDownParticleSystem.Play(); //BringDownShieldAnim
+                _audioSource.Play();
+                graph.damageGradients.DOFade(1, 2).OnComplete(() => graph.damageGradients.DOFade(0, 3));
+                graph.damageGradients.transform.DOScale(1.3f, 2).OnComplete(() => graph.damageGradients.transform.DOScale(0.5f, 3));
+            }
         }
-        //si on change le playbackSpeed on continue dans un update, la vidéo à des freezes  à chaque fois que la boucle se relance
-        public void OnPauseEnabled() {
-            video.playbackSpeed = 0;
+        public override void OnOpenStarted(bool direct) {
+            graph.moverAnimator.Play("cardDisappear", -1, 1);
+            graph.damageGradients.DOFade(0, 0);
         }
-        public void OnPauseDisabled() {
-            video.playbackSpeed = 2;
+        public override void OnOpenFinished(bool direct) {
+            graph.PlayOneShot(BanqueSonore.instance.data.annexe);
+            graph.moverAnimator.Play("cardAppear", -1, 0);
+            
+            lastSavedHP = graph.GetTotal();
+            
         }
-        public float GetTotal() {
-            if (!linkedCore) {
-                return VirtualCore.shield_HpMAX + VirtualCore.shield_HpMAX + VirtualCore.core_HpMAX;
+        public override void OnCloseStarted(bool direct = false) {
+            graph.PlayOneShot(BanqueSonore.instance.data.annexe);
+            graph.moverAnimator.CrossFade("cardDisappear", 0.2f);
+        }
+        public override void Execution(bool _withErrorMessage = true, bool _direct = false) {
+            if (etat == OpenCloseStatus.Closed) {
+                if (VarG.scLyoko.IsShellConnected()) {
+                    OpenWin(_withErrorMessage, _direct);
+                } else {
+                    if (_withErrorMessage)
+                        CompAnomalyString(AnomalyString.shellNotConnected, this);
+                }
             } else {
-                return linkedCore.shield0_Hp / VirtualCore.shield_HpMAX + linkedCore.shield1_Hp / VirtualCore.shield_HpMAX + linkedCore.core_Hp / VirtualCore.core_HpMAX;
+                if (_withErrorMessage)
+                    PrintAlreadyOpened();
             }
         }
     }
