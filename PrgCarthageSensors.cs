@@ -1,15 +1,18 @@
-﻿using UnityEngine;
 using DG.Tweening;
+using IFSCL.AbstractWorld;
+using IFSCL.VirtualWorld;
+using RTSCam;
+using UnityEngine;
+using UnityEngine.Serialization;
 namespace IFSCL.Programs {
-    using VirtualWorld;
     public class PrgCarthageSensors : ProgramsF {
         public FCarthageSensorsPrefab graph;
         public int posX;
         public int posZ;
-        public int zoomAdditiveValue = 0;
+        public int zoomAdditiveValue;
         public Vector3 posMatrix = Vector3.zero;
-        public Camera camera3D;
-        public MazeKeyManager linkedMazeManager;
+        public SensorMaze3D cam3D;
+        public MazeManager linkedMazeManager;
         public bool lockCamButtons = true;
         public PrgCarthageSensors(params object[] args)
             : base(args) {
@@ -17,31 +20,35 @@ namespace IFSCL.Programs {
         public override void Initialisation(FContentPrefab fenetreGameObject) {
             base.Initialisation(fenetreGameObject);
             graph = fenetreGameObject.GetComponent<FCarthageSensorsPrefab>();
-            camera3D = GameScene.Instance.sensorCamLOAD;
-            camera3D.transform.parent.gameObject.SetActive(false);
-            //linkedMazeManager = VarG.MV_replika_carthage.mazeManager;
         }
-        public void SetMazeManager(MazeKeyManager _newMazeManager) { //VarG.scLyoko.mazeManager
+        public override Camera3D_Manager GetCam3D() {
+            return cam3D;
+        }
+        public void LinkCamToAbstract() {
+            cam3D = VarG.carthageParam.sensorMaze3D;
+        }
+        public void SetMazeManager(MazeManager _newMazeManager) {
             linkedMazeManager = _newMazeManager;
         }
         public void OnCarthageStartDestruction() {
-            this.Fermer();
+            CloseWin();
         }
-        public override void Execution(bool _withErrorMessage = true, bool _direct=false) {
+        public override void Execution(bool _withErrorMessage = true, bool _direct = false) {
             if (etat == OpenCloseStatus.Closed) {
                 if (VarG.scLyoko.IsShellConnected()) {
-                    Ouvrir(_withErrorMessage, _direct);
+                    OpenWin(_withErrorMessage, _direct);
                 } else {
-                    CompositeDetailled(MSG.GetAnomaly("shellNotConnected"), this, true);
+                    CompAnomalyString(AnomalyString.shellNotConnected);
                 }
             } else {
-                AffDejaOuvert();
+                PrintAlreadyOpened();
             }
         }
-        public override void OnOpenStarted() {
-            camera3D.transform.parent.gameObject.SetActive(true);
+        public override void OnOpenStarted(bool direct) {
+            cam3D.Show(direct);
+            cam3D.SwapToGameControl();
             graph.animator.Play("carthageSensorsSmaller", -1, 1);
-            camera3D.transform.parent.GetComponent<Animator>().Play("carthageSensors3d_Loop", -1, 0);
+            cam3D.animator.Play("carthageSensors3d_Loop", -1, 0);
             zoomAdditiveValue = 0;
             posX = 0;
             posZ = 0;
@@ -51,32 +58,33 @@ namespace IFSCL.Programs {
             UpdateColor();
             UpdateRebootStatus();
         }
-        public override void OnOpenFinished() {
-            if (linkedMazeManager.statusM == MazeStatus.opened || linkedMazeManager.statusM == MazeStatus.opening) {
+        public override void OnOpenFinished(bool direct) {
+            if (linkedMazeManager.statusM == MazeStatus.opened_Unresolved ||
+                linkedMazeManager.statusM == MazeStatus.opening_Unresolved) {
                 OnMazeOpenEvent();
             }
-            base.OnOpenFinished();
         }
         public void OnMazeOpenEvent() {
             if (!IsOpen())
                 return;
+            cam3D.SwapToGameControl();
             Debug.Log("OnMazeOpenEvent");
-            this.audioSourceFenetre.PlayOneShot(BanqueSonore.Instance.data.carthageSensors_ToBigger);
+            PlayOneShot(BanqueSonore.instance.data.carthageSensors_ToBigger);
             graph.animator.Play("carthageSensorsBigger", -1, 0);
             lockCamButtons = false;
-            camera3D.transform.parent.GetComponent<Animator>().Play("carthageSensors3d_Enable", -1, 0);
+            cam3D.animator.Play("carthageSensors3d_Enable", -1, 0);
         }
-        public override void OnCloseStarted() {
-            GetAByOS<PrgCarthageCountdown>(OSTarget.SC).Fermer();
+        public override void OnCloseStarted(bool direct = false) {
+            GetAByOS<PrgCarthageCountdown>(OSTarget.SC).CloseWin();
         }
         public override void OnCloseFinished() {
-            camera3D.transform.parent.gameObject.SetActive(false);
+            cam3D.Hide();
             lockCamButtons = true;
-            base.OnCloseFinished();
+            
         }
         public void UpdateRebootStatus() {
             if (IsOpen()) {
-                graph.rebootPanel.gameObject.SetActive(VarG.scLyoko.isRebooting || VarG.scLyoko.waitSecondWave_ToEnd);
+                graph.rebootPanel.SetActive(VarG.scLyoko.isRebooting || VarG.scLyoko.waitSecondWave_ToEnd);
                 graph.rawImage.gameObject.SetActive(!VarG.scLyoko.isRebooting && !VarG.scLyoko.waitSecondWave_ToEnd);
             }
         }
@@ -92,27 +100,27 @@ namespace IFSCL.Programs {
             switch (ID) {
                 case 0:
                     posX += 1;
-                    this.audioSourceFenetre.PlayOneShot(BanqueSonore.Instance.data.carthageSensors_Move);
+                    PlayOneShot(BanqueSonore.instance.data.carthageSensors_Move);
                     break;
                 case 1:
                     posX -= 1;
-                    this.audioSourceFenetre.PlayOneShot(BanqueSonore.Instance.data.carthageSensors_Move);
+                    PlayOneShot(BanqueSonore.instance.data.carthageSensors_Move);
                     break;
                 case 2:
                     posZ -= 1;
-                    this.audioSourceFenetre.PlayOneShot(BanqueSonore.Instance.data.carthageSensors_Move);
+                    PlayOneShot(BanqueSonore.instance.data.carthageSensors_Move);
                     break;
                 case 3:
                     posZ += 1;
-                    this.audioSourceFenetre.PlayOneShot(BanqueSonore.Instance.data.carthageSensors_Move);
+                    PlayOneShot(BanqueSonore.instance.data.carthageSensors_Move);
                     break;
                 case 4:
                     zoomAdditiveValue -= 1;
-                    this.audioSourceFenetre.PlayOneShot(BanqueSonore.Instance.data.carthageSensors_Zoom);
+                    PlayOneShot(BanqueSonore.instance.data.carthageSensors_Zoom);
                     break;
                 case 5:
                     zoomAdditiveValue += 1;
-                    this.audioSourceFenetre.PlayOneShot(BanqueSonore.Instance.data.carthageSensors_Zoom);
+                    PlayOneShot(BanqueSonore.instance.data.carthageSensors_Zoom);
                     break;
             }
             posX = Mathf.Clamp(posX, -2, 2);
@@ -125,22 +133,22 @@ namespace IFSCL.Programs {
             }
         }
         private void UpdateZoom() {
-            camera3D.DOKill();
-            camera3D.DOFieldOfView(40 + (zoomAdditiveValue * 15), 0.2f);
+            cam3D.rtCam.DOKill();
+            cam3D.rtCam.DOFieldOfView(40 + (zoomAdditiveValue * 15), 0.2f);
             graph.zoomValue.text = 100 + (zoomAdditiveValue * -50) + "%";
         }
         private void UpdatePan() {
             posMatrix = new Vector3(posX * 125, 975, posZ * 125);
-            //camera3D.gameObject.transform.DOKill();
-            camera3D.DOKill();
-            camera3D.gameObject.transform.DOLocalMove(posMatrix, 0.2f);
+            cam3D.rtCam.DOKill();
+            cam3D.rtCam.transform.DOLocalMove(posMatrix, 0.2f);
         }
         public void KeyActivated_CallAnim() {
             if (!IsOpen())
                 return;
+            cam3D.SwapToGameControl();
             graph.animator.Play("carthageSensorsSmaller", -1, 0);
-            this.audioSourceFenetre.PlayOneShot(BanqueSonore.Instance.data.carthageSensors_Win);
-            camera3D.transform.parent.GetComponent<Animator>().Play("carthageSensors3d_ResolveMaze", -1, 0);
+            PlayOneShot(BanqueSonore.instance.data.carthageSensors_Win);
+            cam3D.animator.Play("carthageSensors3d_ResolveMaze", -1, 0);
             zoomAdditiveValue = 0;
             posX = 0;
             posZ = 0;
@@ -152,9 +160,10 @@ namespace IFSCL.Programs {
         public void MazeClosing_CallAnim() {
             if (!IsOpen())
                 return;
+            cam3D.SwapToGameControl();
             graph.animator.Play("carthageSensorsSmaller", -1, 0);
-            this.audioSourceFenetre.PlayOneShot(BanqueSonore.Instance.data.carthageSensors_Fail);
-            camera3D.transform.parent.GetComponent<Animator>().Play("carthageSensors3d_ResolveMaze", -1, 0); //même anim
+            PlayOneShot(BanqueSonore.instance.data.carthageSensors_Fail);
+            cam3D.animator.Play("carthageSensors3d_ResolveMaze", -1, 0); //même anim
             zoomAdditiveValue = 0;
             lockCamButtons = true;
             posX = 0;
@@ -165,14 +174,14 @@ namespace IFSCL.Programs {
             UpdateColor();
         }
         public void UpdateColor() {
-            if (!this.IsOpen())
+            if (!IsOpen())
                 return;
-            if (linkedMazeManager.statusM == MazeStatus.closing) {
+            if (linkedMazeManager.statusM == MazeStatus.closing_Unresolved) {
                 graph.rawImage.color = graph.mazeClosingColor;
                 graph.animator.Play("carthageSensorsPulseLoop", 1, 0);
             } else {
                 graph.animator.Play("carthageSensorsEmptyNoLoop", 1, 1);
-                if (linkedMazeManager.statusM == MazeStatus.resolved) {
+                if (linkedMazeManager.statusM == MazeStatus.resolved_OR_Disabled) {
                     graph.rawImage.color = graph.keyFoundColor;
                 } else {
                     graph.rawImage.color = graph.keyNotFoundColor;
@@ -180,32 +189,37 @@ namespace IFSCL.Programs {
             }
         }
         public void UpdateTexts() {
-            if (linkedMazeManager.statusM == MazeStatus.resolved) {
+            if (linkedMazeManager.statusM == MazeStatus.resolved_OR_Disabled) {
                 graph.keyInfo.text = MSG.GetWord("found");
-                graph.mazeField.text = MSG.GetName("maze") + ": " + MSG.GetWord("indispo");
+                graph.mazeField.text = MSG.GetName("maze") + VarG.twoPoints + MSG.GetWord("indispo");
             } else {
                 graph.keyInfo.text = MSG.GetWord("notfound");
                 string status = "";
                 switch (linkedMazeManager.statusM) {
-                    case MazeStatus.closed:
+                    case MazeStatus.closed_Unresolved:
                         status = MSG.GetWord("closed");
                         break;
-                    case MazeStatus.closing:
+                    case MazeStatus.closing_Unresolved:
                         status = MSG.GetWord("closing");
                         break;
-                    case MazeStatus.opened:
+                    case MazeStatus.opened_Unresolved:
                         status = MSG.GetWord("opened");
                         break;
-                    case MazeStatus.opening:
+                    case MazeStatus.opening_Unresolved:
                         status = MSG.GetWord("opening");
                         break;
                 }
-                graph.mazeField.text = MSG.GetName("maze") + ": " + status;
+                graph.mazeField.text = MSG.GetName("maze") + VarG.twoPoints + status;
             }
         }
         public void UpdateTextColor_FromMaze() {
             UpdateTexts();
             UpdateColor();
+        }
+        public override void LockCamControl(bool a) {
+            if (cam3D.rtsCam) { // au cas où RAZ entre temps
+                cam3D.SetMouseEnable(!a);
+            }
         }
     }
 }
